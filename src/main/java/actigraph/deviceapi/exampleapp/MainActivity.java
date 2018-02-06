@@ -367,13 +367,8 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
                                     numReceivedStreams = 0;
                                     streamTextView.setText("");
                                 }
-                                //TODO: Save data string into file.
-                                /*path = Environment.getExternalStorageDirectory();
-                                dir = new File(path.getAbsolutePath() + "/Actigraph/");
-                                dir.mkdir();
-                                file = new File(dir, "epochlog.txt");*/
+                                //Save data string into file.
                                 try {
-                                    //os = new FileOutputStream(file, true);
                                     os.write(data.getBytes());
                                     //os.close();
                                 } catch (FileNotFoundException e) {
