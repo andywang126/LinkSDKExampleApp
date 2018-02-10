@@ -1,6 +1,8 @@
 package actigraph.deviceapi.exampleapp;
 
+import android.content.ContentValues;
 import android.content.Context;
+import android.database.sqlite.SQLiteDatabase;
 import android.os.Environment;
 import android.support.v7.app.ActionBarActivity;
 import android.os.Bundle;
@@ -67,6 +69,7 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
     private File dir;
     private File file;
     private FileOutputStream os = null;
+    FeedReaderDbHelper mDbHelper;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -83,6 +86,17 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
         } catch (FileNotFoundException e) {
             e.printStackTrace();
         }
+        mDbHelper = new FeedReaderDbHelper(this);
+        // Gets the data repository in write mode
+        SQLiteDatabase db = mDbHelper.getWritableDatabase();
+
+        // Create a new map of values, where column names are the keys
+        ContentValues values = new ContentValues();
+        values.put(FeedReaderContract.FeedEntry.STEPS, 5);
+        values.put(FeedReaderContract.FeedEntry.TIMESTAMP, "01-26-2018 04:16:00");
+
+        // Insert the new row, returning the primary key value of the new row
+        long newRowId = db.insert(FeedReaderContract.FeedEntry.EPOCH, null, values);
 
         enumerateButton   = (Button)findViewById(R.id.enumerateButton);
         startStreamButton = (Button)findViewById(R.id.startStreamButton);
@@ -671,5 +685,11 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
     static class ViewHolder {
         TextView deviceName;
         RadioButton deviceConnected;
+    }
+
+    @Override
+    protected void onDestroy() {
+        mDbHelper.close();
+        super.onDestroy();
     }
 }
