@@ -21,6 +21,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -54,13 +55,13 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
     private Button epochDownloadButton;
     private ListView serialListView;
     private Runnable uiRunnable;
-    private Boolean  buttonState = false;
+    private Boolean buttonState = false;
     private DeviceListAdapter mDeviceListAdapter;
     private Boolean shouldConnect = true;
-    private String  connectedDevice;
+    private String connectedDevice;
     private TextView streamTextView;
     private ScrollView streamScrollView;
-    private int        numReceivedStreams;
+    private int numReceivedStreams;
     private Context self;
 
     private boolean requestingEpochDownload = false;
@@ -70,6 +71,7 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
     private File file;
     private FileOutputStream os = null;
     FeedReaderDbHelper mDbHelper;
+    private final String DEVICE_ID = "TAS1D50140036";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -98,19 +100,19 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
         // Insert the new row, returning the primary key value of the new row
         long newRowId = db.insert(FeedReaderContract.FeedEntry.EPOCH, null, values);
 
-        enumerateButton   = (Button)findViewById(R.id.enumerateButton);
-        startStreamButton = (Button)findViewById(R.id.startStreamButton);
-        serialListView    = (ListView)findViewById(R.id.serialListView);
-        streamTextView    = (TextView)findViewById(R.id.textView1);
-        stopStreamButton  = (Button)findViewById(R.id.stopStreamButton);
-        streamScrollView  = (ScrollView)findViewById(R.id.textAreaScroller);
-        startIMUButton    = (Button)findViewById(R.id.startIMUButton);
-        stopIMUButton     = (Button)findViewById(R.id.stopIMUButton);
-        deviceStatusButton = (Button)findViewById(R.id.deviceStatus);
-        epochDownloadButton = (Button)findViewById(R.id.epochDownloadButton);
+        enumerateButton = (Button) findViewById(R.id.enumerateButton);
+        startStreamButton = (Button) findViewById(R.id.startStreamButton);
+        serialListView = (ListView) findViewById(R.id.serialListView);
+        streamTextView = (TextView) findViewById(R.id.textView1);
+        stopStreamButton = (Button) findViewById(R.id.stopStreamButton);
+        streamScrollView = (ScrollView) findViewById(R.id.textAreaScroller);
+        startIMUButton = (Button) findViewById(R.id.startIMUButton);
+        stopIMUButton = (Button) findViewById(R.id.stopIMUButton);
+        deviceStatusButton = (Button) findViewById(R.id.deviceStatus);
+        epochDownloadButton = (Button) findViewById(R.id.epochDownloadButton);
 
-        epochDownloadButton.setText("Download Last " + String.format("%.2f", (double)NUM_EPOCH_MINUTES_TO_DOWNLOAD / 60) +
-                                        " hour(s) of Epoch Data");
+        epochDownloadButton.setText("Download Last " + String.format("%.2f", (double) NUM_EPOCH_MINUTES_TO_DOWNLOAD / 60) +
+                " hour(s) of Epoch Data");
         deviceStatusButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -184,12 +186,12 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
             @Override
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
                 if (shouldConnect) {
-                    DeviceInfo dev = (DeviceInfo) mDeviceListAdapter.getItem(position);
+                    DeviceInfo dev1 = (DeviceInfo) mDeviceListAdapter.getItem(position);
+                    DeviceInfo dev = new DeviceInfo(DEVICE_ID, false);
                     /* AGDeviceLibrary:
                         Establish a connection to the selected device from the device list.
                     */
                     agDeviceLibrary.ConnectToDevice(dev.mDeviceId);
-                    int i = 0;
                     agDeviceLibrary.GetConnectedDevice();
                 } else {
                     /* AGDeviceLibrary:
@@ -256,7 +258,7 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
                     /* AGDeviceLibrary:
                         Start a 6 second enumeration
                     */
-                    agDeviceLibrary.EnumerateDevices(6000);
+                    agDeviceLibrary.EnumerateDevices(2000);
                     enumerateButton.setText("Searching");
                     mDeviceListAdapter.clear();
 
@@ -299,6 +301,8 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
     protected void onStart() {
         super.onStart();
         mDeviceListAdapter = new DeviceListAdapter();
+        // TODO: Auto Connection
+        //Boolean connectionSuccessful = autoConnect();
     }
 
     @Override
@@ -336,8 +340,8 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
             JSONObject jData = new JSONObject(data);
             Iterator<?> i = jData.keys();
 
-            while (i.hasNext()){
-                String key = (String)i.next();
+            while (i.hasNext()) {
+                String key = (String) i.next();
 
                 ////////////////////////////////
                 // Known Keys
@@ -383,11 +387,14 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
                                 }
                                 //Save data string into file.
                                 try {
+                                    Epoch epoch = parseJsonToEpoch(data);
                                     os.write(data.getBytes());
                                     //os.close();
                                 } catch (FileNotFoundException e) {
                                     e.printStackTrace();
                                 } catch (IOException e) {
+                                    e.printStackTrace();
+                                } catch (JSONException e) {
                                     e.printStackTrace();
                                 }
 
@@ -409,6 +416,31 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
         } catch (JSONException e) {
             e.printStackTrace();
         }
+    }
+
+    public Epoch parseJsonToEpoch(String data) throws JSONException {
+        Epoch parsedEpoch = null;
+        JSONObject epoch = new JSONObject(data).getJSONObject("epoch");
+        JSONArray epochData = epoch.getJSONArray("epochData");
+        String startDate = epoch.getString("startdatetime");
+        String stopDate = epoch.getString("stopdatetime");
+        try {
+            SimpleDateFormat dateFormat = new SimpleDateFormat("MM-dd-yyyy kk:mm:ss");
+            Date parsedStartDate = dateFormat.parse(startDate);
+            Date parsedStopDate = dateFormat.parse(stopDate);
+            JSONObject object;
+            ArrayList<WearData> wearDatas = new ArrayList<>();
+            for (int i = 0; i < epochData.length(); i++) {
+                object = epochData.getJSONObject(i);
+                WearData wearData = new WearData(dateFormat.parse(object.getString("timestamp")), object.getInt("wearDetect"), object.getInt("xCounts"), object.getInt("yCounts"), object.getInt("zCounts"), object.getInt("steps"), object.getInt("heartRate"));
+                wearDatas.add(wearData);
+            }
+            parsedEpoch = new Epoch(wearDatas, parsedStartDate, parsedStopDate);
+
+        } catch (Exception e) { //this generic but you can control another types of exception
+            e.printStackTrace();
+        }
+        return parsedEpoch;
     }
 
     public static boolean canWriteOnExternalStorage() {
@@ -472,8 +504,8 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
             JSONObject jData = new JSONObject(status);
             Iterator<?> i = jData.keys();
 
-            while (i.hasNext()){
-                String key = (String)i.next();
+            while (i.hasNext()) {
+                String key = (String) i.next();
 
                 ////////////////////////////////
                 // Known Keys
@@ -495,7 +527,7 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
                     });
                 } else if (key.equals("deviceDisconnected")) {
                     shouldConnect = true;
-                    DeviceInfo deviceInf = (DeviceInfo)mDeviceListAdapter.getItem(connectedDevice);
+                    DeviceInfo deviceInf = (DeviceInfo) mDeviceListAdapter.getItem(connectedDevice);
                     if (deviceInf != null) {
                         deviceInf.mIsConnected = false;
                     }
@@ -510,7 +542,7 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
                     final JSONObject errorInfo = jData.getJSONObject(key);
                     Iterator<?> j = errorInfo.keys();
                     while (j.hasNext()) {
-                        key = (String)j.next();
+                        key = (String) j.next();
                         if (key.equals("description")) {
                             try {
                                 final String errorDescription = errorInfo.getString(key);
@@ -538,12 +570,12 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
                     final JSONObject statusInfo = jData.getJSONObject((key));
                     Iterator<?> j = statusInfo.keys();
                     while (j.hasNext()) {
-                        key = (String)j.next();
+                        key = (String) j.next();
                         if (key.equals("epoch")) {
                             final JSONObject epochInfo = statusInfo.getJSONObject(key);
                             Iterator<?> k = epochInfo.keys();
                             while (k.hasNext()) {
-                                key = (String)k.next();
+                                key = (String) k.next();
                                 if (key.equals("startdatetime")) {
                                     startDate = epochInfo.getString(key);
                                 } else if (key.equals("stopdatetime")) {
@@ -600,11 +632,46 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
         }
     }
 
+    public String getLastStartDate(String startDate, String endDate) {
+
+
+        return "";
+    }
+
+    public Boolean autoConnect() {
+        agDeviceLibrary.CancelEnumeration();
+        agDeviceLibrary.EnumerateDevices(2000);
+        enumerateButton.setText("Searching");
+        mDeviceListAdapter.clear();
+        if (agDeviceLibrary.GetConnectedDevice() != null) {
+            shouldConnect = false;
+            mDeviceListAdapter.addDevice(agDeviceLibrary.GetConnectedDevice(), true);
+        }
+
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                mDeviceListAdapter.notifyDataSetChanged();
+            }
+        });
+
+        //DeviceInfo dev = (DeviceInfo) mDeviceListAdapter.getItem(DEVICE_ID);
+        DeviceInfo dev = new DeviceInfo(DEVICE_ID, false);
+                    /* AGDeviceLibrary:
+                        Establish a connection to the selected device from the device list.
+                    */
+        agDeviceLibrary.ConnectToDevice(dev.mDeviceId);
+        agDeviceLibrary.GetConnectedDevice();
+        shouldConnect = false;
+        return true;
+    }
+
     public class DeviceInfo {
         public DeviceInfo(String devId, Boolean isConnected) {
             mDeviceId = devId;
             mIsConnected = isConnected;
         }
+
         public String mDeviceId;
         public Boolean mIsConnected;
     }
@@ -625,7 +692,9 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
             }
         }
 
-        public void clear () { devices.clear(); }
+        public void clear() {
+            devices.clear();
+        }
 
         @Override
         public boolean isEnabled(int position) {
@@ -645,7 +714,7 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
         public Object getItem(String devId) {
             Object retVal = null;
             for (int i = 0; i < devices.size(); i++) {
-                if (((DeviceInfo)getItem(i)).mDeviceId.equals(devId)) {
+                if (((DeviceInfo) getItem(i)).mDeviceId.equals(devId)) {
                     retVal = getItem(i);
                     break;
                 }
@@ -667,7 +736,7 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
 
                 viewHolder = new ViewHolder();
                 viewHolder.deviceName = (TextView) convertView.findViewById(R.id.device_name);
-                viewHolder.deviceConnected = (RadioButton)convertView.findViewById(R.id.radioButton);
+                viewHolder.deviceConnected = (RadioButton) convertView.findViewById(R.id.radioButton);
                 convertView.setTag(viewHolder);
 
             } else {
