@@ -71,7 +71,9 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
     private File file;
     private FileOutputStream os = null;
     FeedReaderDbHelper mDbHelper;
+    private SimpleDateFormat dateFormat = new SimpleDateFormat("MM-dd-yyyy kk:mm:ss");
     private final String DEVICE_ID = "TAS1D50140036";
+    private Epoch epoch;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -82,12 +84,7 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
         path = Environment.getExternalStorageDirectory();
         dir = new File(path.getAbsolutePath() + "/Actigraph/");
         dir.mkdir();
-        file = new File(dir, "epochlog.txt");
-        try {
-            os = new FileOutputStream(file, true);
-        } catch (FileNotFoundException e) {
-            e.printStackTrace();
-        }
+
         mDbHelper = new FeedReaderDbHelper(this);
         // Gets the data repository in write mode
         SQLiteDatabase db = mDbHelper.getWritableDatabase();
@@ -111,8 +108,7 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
         deviceStatusButton = (Button) findViewById(R.id.deviceStatus);
         epochDownloadButton = (Button) findViewById(R.id.epochDownloadButton);
 
-        epochDownloadButton.setText("Download Last " + String.format("%.2f", (double) NUM_EPOCH_MINUTES_TO_DOWNLOAD / 60) +
-                " hour(s) of Epoch Data");
+        epochDownloadButton.setText("Sync Epoch Data");
         deviceStatusButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -387,9 +383,14 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
                                 }
                                 //Save data string into file.
                                 try {
-                                    Epoch epoch = parseJsonToEpoch(data);
+                                    epoch = parseJsonToEpoch(data);
+                                    String timestamp = dateFormat.format(epoch.getStopDateTime());
+                                    file = new File(dir, timestamp);
+                                    os = new FileOutputStream(file, true);
                                     os.write(data.getBytes());
-                                    //os.close();
+                                    os.close();
+
+
                                 } catch (FileNotFoundException e) {
                                     e.printStackTrace();
                                 } catch (IOException e) {
@@ -425,7 +426,6 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
         String startDate = epoch.getString("startdatetime");
         String stopDate = epoch.getString("stopdatetime");
         try {
-            SimpleDateFormat dateFormat = new SimpleDateFormat("MM-dd-yyyy kk:mm:ss");
             Date parsedStartDate = dateFormat.parse(startDate);
             Date parsedStopDate = dateFormat.parse(stopDate);
             JSONObject object;
@@ -454,36 +454,28 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
         return false;
     }
 
-    private void requestEpoch(int numMinutesToDownload, String startDate, String stopDate) {
-        final SimpleDateFormat sdf;
-        sdf = new SimpleDateFormat("MM-dd-yyyy kk:mm:ss");
-
-        long targetstartdatetime;
+    private void requestEpoch(String startDate, String stopDate) {
         long startdatetime;
-        long stopdatetime;
-
         Date date;
+        File[] files = dir.listFiles();
 
         try {
-            date = sdf.parse(startDate);
+            date = dateFormat.parse(startDate);
+            Date newDate;
+            for (int i = 0; i < files.length; i++) {
+                newDate = dateFormat.parse(files[i].getName());
+                if (newDate.after(date))
+                    date = newDate;
+            }
             startdatetime = date.getTime() / 1000;
 
-            date = sdf.parse(stopDate);
-            stopdatetime = date.getTime() / 1000;
-
-            if (stopdatetime - ((numMinutesToDownload - 1) * 60) >= startdatetime) {
-                targetstartdatetime = stopdatetime - ((numMinutesToDownload - 1) * 60);
-            } else {
-                targetstartdatetime = startdatetime;
-            }
-
-            date = new Date(targetstartdatetime * 1000);
+            date = new Date(startdatetime * 1000);
 
             JSONObject epochMessage = new JSONObject();
             JSONObject epochData = new JSONObject();
 
             try {
-                epochData.put("startdatetime", sdf.format(date));
+                epochData.put("startdatetime", dateFormat.format(date));
                 epochData.put("stopdatetime", stopDate);
                 epochMessage.put("epoch", epochData);
 
@@ -584,7 +576,7 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
                             }
                         }
                     }
-                    requestEpoch(NUM_EPOCH_MINUTES_TO_DOWNLOAD, startDate, stopDate);
+                    requestEpoch(startDate, stopDate);
                     /*if (startDate != null && stopDate != null) {
                         Timer timer = new Timer ();
                         final String finalStartDate = startDate;
@@ -630,12 +622,6 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
         } catch (JSONException e) {
             e.printStackTrace();
         }
-    }
-
-    public String getLastStartDate(String startDate, String endDate) {
-
-
-        return "";
     }
 
     public Boolean autoConnect() {
