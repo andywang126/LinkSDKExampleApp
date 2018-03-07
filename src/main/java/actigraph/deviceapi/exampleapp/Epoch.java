@@ -29,4 +29,14 @@ public class Epoch {
     public ArrayList<WearData> getEpochData() {
         return epochData;
     }
+
+    public Epoch appendEpochData(Epoch epoch) {
+        this.stopDateTime = epoch.getStopDateTime();
+        ArrayList<WearData> wearData = epoch.getEpochData();
+        wearData.remove(0);
+        for (WearData wear: wearData) {
+            this.epochData.add(wear);
+        }
+        return this;
+    }
 }
