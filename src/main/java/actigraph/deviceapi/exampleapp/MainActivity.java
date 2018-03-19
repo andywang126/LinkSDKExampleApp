@@ -1,7 +1,8 @@
 package actigraph.deviceapi.exampleapp;
 
-import android.content.ContentValues;
+import android.app.ProgressDialog;
 import android.content.Context;
+import android.content.Intent;
 import android.database.sqlite.SQLiteDatabase;
 import android.os.Environment;
 import android.support.v7.app.ActionBarActivity;
@@ -33,6 +34,7 @@ import java.io.OutputStreamWriter;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.Timer;
@@ -64,7 +66,7 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
     private int numReceivedStreams;
     private Context self;
 
-    private boolean requestingEpochDownload = false;
+    private boolean requestingEpochDownload = true;
     private final int NUM_EPOCH_MINUTES_TO_DOWNLOAD = 30;
     private File path;
     private File dir;
@@ -74,6 +76,10 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
     private SimpleDateFormat dateFormat = new SimpleDateFormat("MM-dd-yyyy kk:mm:ss");
     private final String DEVICE_ID = "TAS1D50140036";
     private Epoch epoch;
+    private DeviceInfo AUTOCONNECTDEVICE;
+    private ProgressDialog progress;
+    private Boolean SYNCING = false;
+    private Intent syncIntent;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -88,14 +94,18 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
         mDbHelper = new FeedReaderDbHelper(this);
         // Gets the data repository in write mode
         SQLiteDatabase db = mDbHelper.getWritableDatabase();
+        progress = new ProgressDialog(this);
+        progress.setCancelable(false); // disable dismiss by tapping outside of the dialog
+        progress.setIndeterminate(false);
+        syncIntent = new Intent(this, SyncIntentService.class);
 
-        // Create a new map of values, where column names are the keys
+/*        // Create a new map of values, where column names are the keys
         ContentValues values = new ContentValues();
         values.put(FeedReaderContract.FeedEntry.STEPS, 5);
         values.put(FeedReaderContract.FeedEntry.TIMESTAMP, "01-26-2018 04:16:00");
 
         // Insert the new row, returning the primary key value of the new row
-        long newRowId = db.insert(FeedReaderContract.FeedEntry.EPOCH, null, values);
+        long newRowId = db.insert(FeedReaderContract.FeedEntry.EPOCH, null, values);*/
 
         enumerateButton = (Button) findViewById(R.id.enumerateButton);
         startStreamButton = (Button) findViewById(R.id.startStreamButton);
@@ -122,13 +132,27 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
         epochDownloadButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                //Show Loading dialog
+                /*progress.setTitle("Syncing");
+                progress.setMessage("Wait while loading...");
+                progress.show();*/
+
+
                 requestingEpochDownload = true;
 
                  /* AGDeviceLibrary:
                     Get the device status JSON of a connected device for use in calculation
                     epoch download window
                  */
-                agDeviceLibrary.GetDeviceStatus();
+                //agDeviceLibrary.GetDeviceStatus();
+
+                if (!SYNCING) {
+                    SYNCING = true;
+                    startService(syncIntent);
+                } else {
+                    SYNCING = false;
+                    stopService(syncIntent);
+                }
             }
         });
 
@@ -297,14 +321,38 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
     protected void onStart() {
         super.onStart();
         mDeviceListAdapter = new DeviceListAdapter();
-        // TODO: Auto Connection
-        //Boolean connectionSuccessful = autoConnect();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         serialListView.setAdapter(mDeviceListAdapter);
+
+        /*if (!shouldConnect) {
+            //Show Loading dialog
+            progress.setTitle("Syncing");
+            progress.setMessage("Wait while loading...");
+            progress.show();
+
+
+            requestingEpochDownload = true;
+
+                 *//* AGDeviceLibrary:
+                    Get the device status JSON of a connected device for use in calculation
+                    epoch download window
+                 *//*
+            agDeviceLibrary.GetDeviceStatus();
+        }*/
+
+
+        // TODO: Auto Connection
+        /*runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                Boolean connectionSuccessful = autoConnect();
+            }
+        });*/
+
     }
 
     @Override
@@ -410,6 +458,7 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
                                 streamScrollView.fullScroll(ScrollView.FOCUS_DOWN);
                             }
                         });
+                        progress.dismiss();
                         break;
                 }
             }
@@ -467,6 +516,11 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
                 if (newDate.after(date))
                     date = newDate;
             }
+
+            Calendar c = Calendar.getInstance();
+            c.setTime(date);
+            c.add(Calendar.MINUTE, 1);
+            date = c.getTime();
             startdatetime = date.getTime() / 1000;
 
             date = new Date(startdatetime * 1000);
@@ -555,7 +609,7 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
                     }
 
                     //Clear this request in the event of an error
-                    requestingEpochDownload = false;
+                    //requestingEpochDownload = false;
                 } else if (requestingEpochDownload && key.equals("status")) {
                     String startDate = null;
                     String stopDate = null;
@@ -592,7 +646,7 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
                         timer.schedule(hourlyTask, 0l, 1000*60);
                     }*/
 
-                    requestingEpochDownload = false;
+                    //requestingEpochDownload = false;
                 } else {
 
                     // Other status outputs are just added to the text view
@@ -604,8 +658,18 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
                                 numReceivedStreams = 0;
                                 streamTextView.setText("");
                             }
-                            streamTextView.append(status);
-                            streamTextView.append("\n");
+                            //streamTextView.append(status);
+                            //streamTextView.append("\n");
+                            try {
+                                JSONObject jsonObject = new JSONObject(status).getJSONObject("epochDownload");
+                                if (jsonObject.has("progress"))
+                                    progress.setMessage("Wait while loading...("+jsonObject.getInt("progress")+"%)");
+                                    //progress.setProgress(jsonObject.getInt("progress"));
+                                else if (jsonObject.has("state") && jsonObject.getString("state").equals("completed"))
+                                    progress.setMessage("Epoch Data received. Saving data...");
+                            } catch (JSONException e) {
+                                e.printStackTrace();
+                            }
                         }
                     });
 
@@ -625,30 +689,43 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
     }
 
     public Boolean autoConnect() {
-        agDeviceLibrary.CancelEnumeration();
-        agDeviceLibrary.EnumerateDevices(2000);
-        enumerateButton.setText("Searching");
+                            /* AGDeviceLibrary:
+                        Start a 6 second enumeration
+                    */
+        int i = 1;
         mDeviceListAdapter.clear();
-        if (agDeviceLibrary.GetConnectedDevice() != null) {
-            shouldConnect = false;
-            mDeviceListAdapter.addDevice(agDeviceLibrary.GetConnectedDevice(), true);
+        while (mDeviceListAdapter.isEmpty() && i<10) {
+            agDeviceLibrary.EnumerateDevices(i*1000);
+            i++;
+
+
+
+                    /* AGDeviceLibrary:
+                        If we were connected to a device before we performed the enumerate, query
+                        the library for that device and add it to our results list.
+                    */
+            if (agDeviceLibrary.GetConnectedDevice() != null) {
+                shouldConnect = false;
+                mDeviceListAdapter.addDevice(agDeviceLibrary.GetConnectedDevice(), true);
+            }
+            //mDeviceListAdapter.notifyDataSetChanged();
         }
 
-        runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                mDeviceListAdapter.notifyDataSetChanged();
-            }
-        });
-
-        //DeviceInfo dev = (DeviceInfo) mDeviceListAdapter.getItem(DEVICE_ID);
-        DeviceInfo dev = new DeviceInfo(DEVICE_ID, false);
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        buttonState = true;
+        agDeviceLibrary.CancelEnumeration();
+        if (shouldConnect) {
+            AUTOCONNECTDEVICE = new DeviceInfo(DEVICE_ID, false);
                     /* AGDeviceLibrary:
                         Establish a connection to the selected device from the device list.
                     */
-        agDeviceLibrary.ConnectToDevice(dev.mDeviceId);
-        agDeviceLibrary.GetConnectedDevice();
-        shouldConnect = false;
+            agDeviceLibrary.ConnectToDevice(AUTOCONNECTDEVICE.mDeviceId);
+            agDeviceLibrary.GetConnectedDevice();
+        }
         return true;
     }
 
