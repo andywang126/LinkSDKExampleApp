@@ -1,10 +1,13 @@
 package actigraph.deviceapi.exampleapp;
 
+import android.app.AlarmManager;
+import android.app.PendingIntent;
 import android.app.ProgressDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.database.sqlite.SQLiteDatabase;
 import android.os.Environment;
+import android.os.SystemClock;
 import android.support.v7.app.ActionBarActivity;
 import android.os.Bundle;
 import android.util.Log;
@@ -37,6 +40,7 @@ import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.Iterator;
+import java.util.TimeZone;
 import java.util.Timer;
 import java.util.TimerTask;
 
@@ -80,6 +84,7 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
     private ProgressDialog progress;
     private Boolean SYNCING = false;
     private Intent syncIntent;
+    private String excel = "AllData.csv";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -91,6 +96,17 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
         dir = new File(path.getAbsolutePath() + "/Actigraph/");
         dir.mkdir();
 
+        file = new File(dir, excel);
+        if (!file.isFile()) {
+            try {
+                os = new FileOutputStream(file, true);
+                os.write("Timestamp, SyncTime, wearDetect, xCounts, yCounts, zCounts, steps, heartRate\n".getBytes());
+                os.close();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+
         mDbHelper = new FeedReaderDbHelper(this);
         // Gets the data repository in write mode
         SQLiteDatabase db = mDbHelper.getWritableDatabase();
@@ -98,6 +114,7 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
         progress.setCancelable(false); // disable dismiss by tapping outside of the dialog
         progress.setIndeterminate(false);
         syncIntent = new Intent(this, SyncIntentService.class);
+        dateFormat.setTimeZone(TimeZone.getTimeZone("GMT"));
 
 /*        // Create a new map of values, where column names are the keys
         ContentValues values = new ContentValues();
@@ -148,7 +165,24 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
 
                 if (!SYNCING) {
                     SYNCING = true;
-                    startService(syncIntent);
+                    /*PendingIntent pintent = PendingIntent.getService(self, 0, syncIntent, 0);
+                    AlarmManager alarm = (AlarmManager)getSystemService(Context.ALARM_SERVICE);
+                    alarm.set(AlarmManager.RTC_WAKEUP, SystemClock.elapsedRealtime() +100, pintent);*/
+
+
+                    PendingIntent restartServicePI = PendingIntent.getService(
+                            getApplicationContext(), 1, syncIntent,
+                            PendingIntent.FLAG_ONE_SHOT);
+
+                    //Restart the service once it has been killed android
+                    AlarmManager alarmService = (AlarmManager)getApplicationContext().getSystemService(Context.ALARM_SERVICE);
+                    alarmService.set(AlarmManager.RTC_WAKEUP, SystemClock.elapsedRealtime() +100, restartServicePI);
+
+
+
+
+
+                    //self.startService(syncIntent);
                 } else {
                     SYNCING = false;
                     stopService(syncIntent);
@@ -432,6 +466,13 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
                                 //Save data string into file.
                                 try {
                                     epoch = parseJsonToEpoch(data);
+                                    //Save to CSV
+                                    file = new File(dir, excel);
+                                    os = new FileOutputStream(file, true);
+                                    os.write(epochToString(epoch).getBytes());
+                                    os.close();
+
+                                    //Save as individual file.
                                     String timestamp = dateFormat.format(epoch.getStopDateTime());
                                     file = new File(dir, timestamp);
                                     os = new FileOutputStream(file, true);
@@ -466,6 +507,17 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
         } catch (JSONException e) {
             e.printStackTrace();
         }
+    }
+
+    public String epochToString(Epoch epoch) {
+        StringBuffer stringBuffer = new StringBuffer();
+        if (epoch != null) {
+            ArrayList<WearData> wearDatas = epoch.getEpochData();
+            for (WearData wearData : wearDatas) {
+                stringBuffer.append(wearData.getTimestamp() + ", ").append(epoch.getStopDateTime() + ", ").append(wearData.getWearDetect() + ", ").append(wearData.getxCounts() + ", ").append(wearData.getyCounts() + ", ").append(wearData.getzCounts() + ", ").append(wearData.getSteps() + ", ").append(wearData.getHeartRate()).append("\n");
+            }
+        }
+        return stringBuffer.toString();
     }
 
     public Epoch parseJsonToEpoch(String data) throws JSONException {
@@ -512,9 +564,11 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
             date = dateFormat.parse(startDate);
             Date newDate;
             for (int i = 0; i < files.length; i++) {
-                newDate = dateFormat.parse(files[i].getName());
-                if (newDate.after(date))
-                    date = newDate;
+                if (!files[i].getName().equals(excel)) {
+                    newDate = dateFormat.parse(files[i].getName());
+                    if (newDate.after(date))
+                        date = newDate;
+                }
             }
 
             Calendar c = Calendar.getInstance();
@@ -663,7 +717,7 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
                             try {
                                 JSONObject jsonObject = new JSONObject(status).getJSONObject("epochDownload");
                                 if (jsonObject.has("progress"))
-                                    progress.setMessage("Wait while loading...("+jsonObject.getInt("progress")+"%)");
+                                    progress.setMessage("Wait while loading...(" + jsonObject.getInt("progress") + "%)");
                                     //progress.setProgress(jsonObject.getInt("progress"));
                                 else if (jsonObject.has("state") && jsonObject.getString("state").equals("completed"))
                                     progress.setMessage("Epoch Data received. Saving data...");
@@ -694,8 +748,8 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
                     */
         int i = 1;
         mDeviceListAdapter.clear();
-        while (mDeviceListAdapter.isEmpty() && i<10) {
-            agDeviceLibrary.EnumerateDevices(i*1000);
+        while (mDeviceListAdapter.isEmpty() && i < 10) {
+            agDeviceLibrary.EnumerateDevices(i * 1000);
             i++;
 
 
@@ -821,6 +875,17 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
 
     @Override
     protected void onDestroy() {
+        Log.d("WARN", "MainActivity Destroyed");
+        file = new File(dir, excel);
+            try {
+                Date currentTime = Calendar.getInstance().getTime();
+                os = new FileOutputStream(file, true);
+                os.write(("Destroyed at:"+ dateFormat.format(currentTime) +"\n").getBytes());
+                os.close();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
         mDbHelper.close();
         super.onDestroy();
     }
