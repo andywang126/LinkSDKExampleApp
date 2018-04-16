@@ -74,9 +74,10 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
     private final int NUM_EPOCH_MINUTES_TO_DOWNLOAD = 30;
     private File path;
     private File dir;
+    private File dirForFiles;
     private File file;
     private FileOutputStream os = null;
-    FeedReaderDbHelper mDbHelper;
+    //FeedReaderDbHelper mDbHelper;
     private SimpleDateFormat dateFormat = new SimpleDateFormat("MM-dd-yyyy kk:mm:ss");
     private final String DEVICE_ID = "TAS1D50140036";
     private Epoch epoch;
@@ -96,6 +97,9 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
         dir = new File(path.getAbsolutePath() + "/Actigraph/");
         dir.mkdir();
 
+        dirForFiles = new File(path.getAbsolutePath() + "/ActigraphData/");
+        dirForFiles.mkdir();
+
         file = new File(dir, excel);
         if (!file.isFile()) {
             try {
@@ -107,9 +111,9 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
             }
         }
 
-        mDbHelper = new FeedReaderDbHelper(this);
+        //mDbHelper = new FeedReaderDbHelper(this);
         // Gets the data repository in write mode
-        SQLiteDatabase db = mDbHelper.getWritableDatabase();
+        //SQLiteDatabase db = mDbHelper.getWritableDatabase();
         progress = new ProgressDialog(this);
         progress.setCancelable(false); // disable dismiss by tapping outside of the dialog
         progress.setIndeterminate(false);
@@ -474,7 +478,7 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
 
                                     //Save as individual file.
                                     String timestamp = dateFormat.format(epoch.getStopDateTime());
-                                    file = new File(dir, timestamp);
+                                    file = new File(dirForFiles, timestamp);
                                     os = new FileOutputStream(file, true);
                                     os.write(data.getBytes());
                                     os.close();
@@ -558,7 +562,7 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
     private void requestEpoch(String startDate, String stopDate) {
         long startdatetime;
         Date date;
-        File[] files = dir.listFiles();
+        File[] files = dirForFiles.listFiles();
 
         try {
             date = dateFormat.parse(startDate);
@@ -876,17 +880,7 @@ public class MainActivity extends ActionBarActivity implements AGDeviceLibraryLi
     @Override
     protected void onDestroy() {
         Log.d("WARN", "MainActivity Destroyed");
-        file = new File(dir, excel);
-            try {
-                Date currentTime = Calendar.getInstance().getTime();
-                os = new FileOutputStream(file, true);
-                os.write(("Destroyed at:"+ dateFormat.format(currentTime) +"\n").getBytes());
-                os.close();
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-
-        mDbHelper.close();
+        //mDbHelper.close();
         super.onDestroy();
     }
 }
